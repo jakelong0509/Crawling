@@ -5,11 +5,14 @@ const path = require('path');
 const { pseudoRandomBytes } = require("crypto");
 const xlsx = require("xlsx");
 
-var filePath = `./collected/Meat.xlsx`;
+const filePath = `./collected/Home&Living.xlsx`;
+const lastUrl = '/tt-groceries/kitchen-home';
+const category = "Home & Living";
 let allData = [];
 
 const workBook = xlsx.utils.book_new();
 let mainWorksheet = xlsx.utils.json_to_sheet(allData);
+
 xlsx.utils.book_append_sheet(workBook, mainWorksheet, 'All Data');
 mainWorksheet["!cols"] = [{width:25}];
 
@@ -23,7 +26,7 @@ mainWorksheet["!cols"] = [{width:25}];
     await page.setViewport({ width: 1366, height: 768});
     try
     {
-        var originalWebpage = 'https://www.tntsupermarket.com/fresh-frozen/meat';
+        var originalWebpage = 'https://www.tntsupermarket.com' + lastUrl;
         await page.goto(originalWebpage + ".html");
         await page.waitForSelector('[class="items ln-items-cat category"]');
         var catList = [];
@@ -32,16 +35,74 @@ mainWorksheet["!cols"] = [{width:25}];
         {
             let catObj = Object();
             catObj.String = await categories[i].evaluate(el => el.textContent);
-            if(catObj.String == "Top Picks")
+            if(catObj.String == "Top Picks" || catObj.String == "Live!" || catObj.String == "Free Gift With Durians!" || catObj.String == "Hotpot Ingredients" || catObj.String == "Weight Management")
             {
                 continue;
             }
-            if(catObj.String == "Chicken")
+            let catStringArray = null;
+            if(catObj.String == "Octopus & Squid")
             {
-                catObj.String = "Chichken";
+                catStringArray = ("Mollus Seafood").toLowerCase().split(" ");
             }
-            var catUrl = (catObj.String).toLowerCase().replace(" &", "").split(" ").join("-");
-            catObj.Web = originalWebpage + "/" + catUrl + ".html";
+            else if(catObj.String == "Processed Seafood")
+            {
+                catStringArray = ("Surimi Seafood").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Chicken")
+            {
+                catStringArray = ("Chichken").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Tofu Products")
+            {
+                catStringArray = ("Bean Products").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Processed food")
+            {
+                catStringArray = ("Sausages Meatballs").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Frozen fruits & Vegetables")
+            {
+                catStringArray = ("Frozen Produce Bean Products").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Delicious Tarts")
+            {
+                catStringArray = ("Egg Tarts").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Chinese Pastries")
+            {
+                catStringArray = ("Chinese panstries").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Jerky & Seaweeds")
+            {
+                catStringArray = ("Jerkies & Seaweeds").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Jelly & Preserved Fruits")
+            {
+                catStringArray = ("Jellies & Preserved Fruits").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Candy & Chocolate")
+            {
+                catStringArray = ("Candies & Chocolates").toLowerCase().split(" ");
+            }
+            else if(catObj.String == "Beauty")
+            {
+                catStringArray = ("Masks").toLowerCase().split(" ");
+            }
+            else
+            {
+                catStringArray = (catObj.String).toLowerCase().split(" ");
+            }
+            let s = "";
+            for(var o in catStringArray)
+            {
+                var v = catStringArray[o].replace("!", "").replace("&", "");
+                if(v !== "")
+                {
+                    s = s + v + " ";
+                }
+            }
+            let catUrl = s.substring(0, s.length - 1);
+            catObj.Web = originalWebpage + "/" + catUrl.replace(/ /g, "-") + ".html";
             catList.push(catObj);
         }
         for(let x in catList)
@@ -84,9 +145,26 @@ mainWorksheet["!cols"] = [{width:25}];
                 productData.imgUrl = await img.evaluate(el => el.getAttribute("src"));
                 let div = await products[y].$("[class='product-item-details']");
                 productData.name = await (await div.$("a")).evaluate(el => el.textContent);
-                productData.price = await (await div.$("[class='price']")).evaluate(el => el.textContent);
-                productData.Category = "Meat";
+                if (await div.$("[class='was-price']") !== null)
+                {
+                    productData.price = await (await div.$("[class='was-price'] > span")).evaluate(el => el.textContent);
+                }
+                else
+                {
+                    productData.price = await (await div.$("[class='price']")).evaluate(el => el.textContent);
+                }
+                let status = null;
+                if(await div.$("[class='actions-primary'] > div[class='stock unavailable']") !== null)
+                {
+                    status = "Out of Stock";
+                }
+                else
+                {
+                    status = "In Stock";
+                }
+                productData.Category = category;
                 productData.SubCategory = catList[x].String;
+                productData.Status = status;
                 allData.push(productData);
             }
         }
