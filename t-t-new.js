@@ -384,7 +384,7 @@ Object.keys(allData).forEach(category => {
             subcategory: crawlObj.subCategory,
             url: productLink,
             imageUrl: (await (await $productTopMain.$('.fotorama__img')).evaluate(el => el.getAttribute('src'))),
-            size: (await (await $productTopMain.$('.swatch-option.selected')).evaluate(el => el.textContent.toLowerCase())),
+            size: (await (await $productTopMain.$('.swatch-option.selected')).evaluate(el => el ? el.textContent.toLowerCase() : '')),
           }
 
           allData[crawlObj.category].push(productObj);
