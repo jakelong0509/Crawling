@@ -301,13 +301,13 @@ const crawlMap = [
   },
 ]
 
-/*const testCrawlMap = [
+const testCrawlMap = [
   {
     category: 'Meat',
     subCategory: 'Pork',
-    href: 'https://www.tntsupermarket.com/fresh-frozen/meat/pork.html'
+    href: 'https://www.tntsupermarket.com/fresh-frozen/fruits-vegetables/bamboo-shoots-processed-vegetables.html'
   }
-]*/
+]
 
 let allData = {};
 crawlMap.forEach(obj => allData[obj.category] = []);
@@ -324,7 +324,7 @@ Object.keys(allData).forEach(category => {
 (async () => {
   const browser = await puppeteer.launch(
       {
-        headless: true
+        headless: false
       }
   );
 
@@ -337,6 +337,8 @@ Object.keys(allData).forEach(category => {
 
       await page.goto(originalWebpage);
       await page.waitForSelector('.items.product-items');
+
+      // Todo: add delivery postcode
 
       // load more ...
       let viewMoreBtn = await page.$('.has_more')
@@ -354,44 +356,53 @@ Object.keys(allData).forEach(category => {
         productLinks.push(await p.evaluate(el => el.href));
       }
 
-    for (const productLink of productLinks) {
-      await page.goto(productLink);
-      await page.waitForSelector('.product-top-main .fotorama__img');
-      const $productTopMain = await page.$('.product-top-main');
+      for (const productLink of productLinks) {
+        try {
+          console.log('crawling product', productLink);
+          await page.goto(productLink);
+          await page.waitForSelector('.product-top-main .fotorama__img');
+          const $productTopMain = await page.$('.product-top-main');
 
-      // Sold by each || Sold by weight
-      const soldBy = await ((await $productTopMain.$('.sold-by-method')).evaluate(el => el.textContent.trim().toLowerCase()))
-      const unitPrice = (await (await $productTopMain.$('.special-price:not([class*="wasprice"])')).evaluate(el => el.textContent.trim().replace('$', '')));
-      const unit = await $productTopMain.$('.sale-weight-uom') ? (await (await $productTopMain.$('.sale-weight-uom')).evaluate(el => el.textContent.replace('/', ''))) : '';
-      const minAllowed = (await (await $productTopMain.$('.box-tocart input.input-text.qty')).evaluate(el => el.getValue()));
+          // Sold by each || Sold by weight
+          const soldBy = await ((await $productTopMain.$('.sold-by-method')).evaluate(el => el.textContent.trim().toLowerCase()))
+          let priceEl = await $productTopMain.$('.special-price:not([class*="wasprice"])');
+          priceEl = priceEl ? priceEl : await $productTopMain.$('.after-price .price');
+          const unitPrice = (await priceEl.evaluate(el => el.textContent.trim().replace('$', '')));
+          const unit = await $productTopMain.$('.sale-weight-uom') ? (await (await $productTopMain.$('.sale-weight-uom')).evaluate(el => el.textContent.replace('/', ''))) : '';
+          const minAllowed = (await (await $productTopMain.$('.box-tocart input.input-text.qty')).evaluate(el => el.getValue()));
 
-      const productObj = {
-        name: (await (await $productTopMain.$('.page-title')).evaluate(el => el.textContent.trim())),
-        priceSold: soldBy === 'sold by each' ?
-            unitPrice
-            : (parseFloat(unitPrice) * parseFloat(minAllowed)).toFixed(2),
-        unitPrice,
-        unit,
-        minAllowed,
-        soldBy,
-        category: crawlObj.category,
-        subcategory: crawlObj.subCategory,
-        url: productLink,
-        imageUrl: (await (await $productTopMain.$('.fotorama__img')).evaluate(el => el.getAttribute('src'))),
-        size: (await (await $productTopMain.$('.swatch-option.selected')).evaluate(el => el.textContent.toLowerCase())),
+          const productObj = {
+            name: (await (await $productTopMain.$('.page-title')).evaluate(el => el.textContent.trim())),
+            priceSold: soldBy === 'sold by each' ?
+                unitPrice
+                : (parseFloat(unitPrice) * parseFloat(minAllowed)).toFixed(2),
+            unitPrice,
+            unit,
+            minAllowed,
+            soldBy,
+            category: crawlObj.category,
+            subcategory: crawlObj.subCategory,
+            url: productLink,
+            imageUrl: (await (await $productTopMain.$('.fotorama__img')).evaluate(el => el.getAttribute('src'))),
+            size: (await (await $productTopMain.$('.swatch-option.selected')).evaluate(el => el.textContent.toLowerCase())),
+          }
+
+          allData[crawlObj.category].push(productObj);
+        } catch (e) {
+          console.log('Error when crawling product', productLink, e);
+        }
       }
 
-      allData[crawlObj.category].push(productObj);
-      console.log('productObj', productObj)
-    }
-
-    console.log(allData[crawlObj.category])
+      console.log('Done crawling', crawlObj.category, crawlObj.subCategory)
       xlsx.utils.sheet_add_json(sheets[crawlObj.category], allData[crawlObj.category]);
 
+      // Write to workbook each time done crawling a subcategory
+      console.log('Writing to workbook for', crawlObj.category, crawlObj.subCategory );
+      xlsx.writeFile(workBook, filePath);
+
     }
 
-    console.log(allData);
-    xlsx.writeFile(workBook, filePath);
+    console.log('Finnish crawling...')
     await browser.close();
 
 
