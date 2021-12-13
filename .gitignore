@@ -88,3 +88,9 @@ lerna-debug.log
 # System Files
 .DS_Store
 Thumbs.db
+collected/AlPremium_1.xlsx
+collected/AlPremium_2.xlsx
+collected/Chicken&Poutry.xlsx
+collected/T&T.xlsx
+collected/T&T_Full.xlsx
+TandT.js
