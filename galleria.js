@@ -1,129 +1,51 @@
 const fs = require("fs");
-// const puppeteer = require('puppeteer');
-const { chromium, devices } = require("playwright");
+// const { chromium } = require("playwright");
+const puppeteer = require('puppeteer');
 const async = require('async');
 const path = require('path');
-const { pseudoRandomBytes } = require("crypto");
 const xlsx = require("xlsx");
 
-const filePath = `./collected/galleria-bloor.xlsx`;
-
-/*const crawlMap = [
-  {
-    category: 'Fruits & Vegetables',
-    subCategory: 'Fresh Fruits',
-    href: 'https://www.tntsupermarket.com/fresh-frozen/fruits-vegetables/fresh-fruits.html'
-  },
-];*/
+const location = 'wellesley'; // 'bloor';
+const filePath = `./collected/galleria.${location}-${Date.now()}.xlsx`;
+console.log('Will save csv to ', filePath);
 
 const testCrawlMap = [
   {
-    "category": "DELI & READY MEALS",
-    "subCat1": "DELI FOOD",
-    "subCat2": "SUSHI",
-    "subCatCode": "AF04AB"
-  },
-  {
-    "category": "DELI & READY MEALS",
-    "subCat1": "DELI FOOD",
-    "subCat2": "CATERING",
-    "subCatCode": "AF04AA"
-  },
-  {
-    "category": "DELI & READY MEALS",
-    "subCat1": "DELI FOOD",
-    "subCat2": "MARINATED MEAT",
-    "subCatCode": "AF04AC"
-  },
-  {
-    "category": "DELI & READY MEALS",
-    "subCat1": "KIMCHI",
-    "subCat2": "POGGI KIMCHI",
-    "subCatCode": "AF02AB"
-  },
-  {
-    "category": "DELI & READY MEALS",
-    "subCat1": "KIMCHI",
-    "subCat2": "MAT KIMCHI",
-    "subCatCode": "AF02AA"
-  },
-  {
-    "category": "DELI & READY MEALS",
-    "subCat1": "KIMCHI",
-    "subCat2": "OTHER KIMCHI",
-    "subCatCode": "AF02AC"
-  },
-  {
-    "category": "LIFESTYLE GOODS",
-    "subCat1": "KITCHENWARE &  APPLIANCE",
-    "subCat2": "",
-    "subCatCode": "AG01"
-  },
-  {
-    "category": "LIFESTYLE GOODS",
-    "subCat1": "COSMETICS &  BEAUTY",
-    "subCat2": "",
-    "subCatCode": "AG04"
-  },
-  {
-    "category": "LIFESTYLE GOODS",
-    "subCat1": "HEALTH PRODUCTS",
-    "subCat2": "",
-    "subCatCode": "AG03"
-  },
-  {
-    "category": "LIFESTYLE GOODS",
-    "subCat1": "SEASONAL PRODUCTS",
-    "subCat2": "",
-    "subCatCode": "AG05"
-  },
-  {
-    "category": "LIFESTYLE GOODS",
-    "subCat1": "HOUSEHOLD GOODS",
-    "subCat2": "",
-    "subCatCode": "AG02"
-  },
-  {
-    "category": "PET FOODS & SUPPLIES",
-    "subCat1": "DOGS",
-    "subCat2": "Food / Treats",
-    "subCatCode": "AH01AA"
+    "category": "GROCERY",
+    "subCat1": "SNACK",
+    "subCat2": "COOKIES &  SNACKS",
+    "subCatCode": "AE01AA"
   },
 ];
 
-/*const allData = {};
-crawlMap.forEach(obj => allData[obj.category] = []);
-
-const workBook = xlsx.utils.book_new();
-
-let sheets = {};
-Object.keys(allData).forEach(category => {
-  sheets[category] = xlsx.utils.json_to_sheet(allData[category]);
-  xlsx.utils.book_append_sheet(workBook, sheets[category], category);
-  sheets[category]["!cols"] = [{width:25}];
-});*/
-
 (async () => {
-  const browser = await chromium.launch(
+  /*const browser = await chromium.launch(
       {
-        headless: false,
+        headless: true,
         chromiumSandbox: false,
         args: ['--window-size=1366,768'],
       }
+  );*/
+
+  let totalCrawledProducts = 0
+
+
+  const browser = await puppeteer.launch(
+      {
+        headless: true
+      }
   );
 
-/*  const context = await browser.createIncognitoBrowserContext();
-  const page = await context.newPage();*/
-
   const page = await browser.newPage();
-  // await page.setViewport({ width: 1366, height: 768});
+  await page.setViewport({ width: 1366, height: 768});
 
+  console.log('Selecting store location ', location);
   await selectStore(page);
 
   const crawlCatMap = await getCrawlMap(page);
   // const crawlCatMap = testCrawlMap;
 
-  console.log('crawlCatMap', JSON.stringify(crawlCatMap, null, 2));
+  // console.log('crawlCatMap', JSON.stringify(crawlCatMap, null, 2));
 
   // setup work book
   const allData = {};
@@ -136,27 +58,12 @@ Object.keys(allData).forEach(category => {
     sheets[category]["!cols"] = [{width:25}];
   });
 
-
-
-  // await browser.close();
-
-
-
-
-
   try {
     for(let crawlObj of crawlCatMap) {
-      const originalWebpage = getUrlByCatCode(crawlObj.subCatCode)
-
-      // Because changing between product pages only change the query param
-      // use page.goto subsequently does not work
-      // this is the trick
-      // https://stackoverflow.com/questions/62343404/puppeteer-page-goto-not-working-for-query-parameters
-      await page.goto('about:blank')
+      const originalWebpage = getUrlByCatCode(crawlObj.subCatCode, location)
 
       await page.goto(originalWebpage);
       await page.waitForSelector('.pro-list');
-
 
       // load more ...
       let viewMoreBtn = await page.$('.more-results-btn')
@@ -168,44 +75,56 @@ Object.keys(allData).forEach(category => {
         countMoreProduct = await (await page.$('#spShowViewCnt')).evaluate(el => el.textContent.trim());
       }
 
-      // Get all product links
+      // Get all product links for a subcategory
       const productLinks = [];
       const productPhotos = await  page.$$('.pro-list .item .item-img-info:not(.img-out-of-stock) .product-image')
       for (const p of productPhotos) {
         productLinks.push(await p.evaluate(el => el.href));
       }
 
-      console.log('productLinks',productLinks);
-
-     /* for (const productLink of productLinks) {
+      console.log('crawling product crawlObj', crawlObj);
+      for (const productLink of productLinks) {
         try {
           console.log('crawling product', productLink);
           await page.goto(productLink);
-          await page.waitForSelector('.product-top-main .fotorama__img');
-          const $productTopMain = await page.$('.product-top-main');
+          await page.waitForSelector('.product-view');
+          const $productTopMain = await page.$('.product-view');
 
-          // Sold by each || Sold by weight
-          const soldBy = await ((await $productTopMain.$('.sold-by-method')).evaluate(el => el.textContent.trim().toLowerCase()))
-          let priceEl = await $productTopMain.$('.special-price:not([class*="wasprice"])');
-          priceEl = priceEl ? priceEl : await $productTopMain.$('.after-price .price');
-          const unitPrice = (await priceEl.evaluate(el => el.textContent.trim().replace('$', '')));
-          const unit = await $productTopMain.$('.sale-weight-uom') ? (await (await $productTopMain.$('.sale-weight-uom')).evaluate(el => el.textContent.replace('/', ''))) : '';
-          const minAllowed = (await (await $productTopMain.$('.box-tocart input.input-text.qty')).evaluate(el => el.getValue()));
+          const inStockEl = await $productTopMain.$('.price-block .availability.in-stock');
+          // do not scan product if not in stock
+          if (!inStockEl) {
+            continue;
+          }
+          const nameEl = await $productTopMain.$('.product-name h1');
+
+          const oldPriceEl = await $productTopMain.$('.price-block .old-price .price');
+          const currentPriceEl = await $productTopMain.$('.price-block .special-price .price');
+          const finalPriceEl = oldPriceEl ? oldPriceEl : currentPriceEl;
+          const unitPrice = await finalPriceEl.evaluate(el => el.textContent.trim().replace('$ ', ''));
+          const unit = await currentPriceEl.evaluate(el => el.nextSibling.textContent.replace('/', '').trim());
+
+          const descriptionEl = await $productTopMain.$('.ten-plus-one > fieldset > div');
+          const description = descriptionEl ? await (descriptionEl.evaluate(el => el.textContent.trim())) : '';
+
+          const imageEl = await $productTopMain.$('.product-image');
+          const barcodeEl = await $productTopMain.$('.price-block .other-info span:nth-child(2)');
 
           const productObj = {
-            name: (await (await $productTopMain.$('.page-title')).evaluate(el => el.textContent.trim())),
-            priceSold: soldBy === 'sold by each' ?
-                unitPrice
-                : (parseFloat(unitPrice) * parseFloat(minAllowed)).toFixed(2),
+            name: (await nameEl.evaluate(el => el.textContent.trim())),
             unitPrice,
             unit,
-            minAllowed,
-            soldBy,
             category: crawlObj.category,
-            subcategory: crawlObj.subCategory,
+            subCat1: crawlObj.subCat1,
+            subCat2: crawlObj.subCat2,
+            barcode: (await barcodeEl.evaluate(el => el.textContent.trim().replace('Barcode: ', ''))),
             url: productLink,
-            imageUrl: (await (await $productTopMain.$('.fotorama__img')).evaluate(el => el.getAttribute('src'))),
-            size: (await (await $productTopMain.$('.swatch-option.selected')).evaluate(el => el ? el.textContent.toLowerCase() : '')),
+            imageUrl: (await imageEl.evaluate(el => {
+              const backgroundImage = el.style.backgroundImage;
+              const regex = /^url\("(.+)"\)$/;
+              const tokens = backgroundImage.match(regex);
+              return tokens[1] ? `https://www.galleriasm.com${tokens[1]}` : ''
+            })),
+            description,
           }
 
           allData[crawlObj.category].push(productObj);
@@ -214,12 +133,13 @@ Object.keys(allData).forEach(category => {
         }
       }
 
-      console.log('Done crawling', crawlObj.category, crawlObj.subCategory)
-      xlsx.utils.sheet_add_json(sheets[crawlObj.category], allData[crawlObj.category]);
+      totalCrawledProducts += productLinks.length;
+      console.log('Total products crawled: ', totalCrawledProducts);
 
       // Write to workbook each time done crawling a subcategory
-      console.log('Writing to workbook for', crawlObj.category, crawlObj.subCategory );
-      xlsx.writeFile(workBook, filePath);*/
+      console.log('Done crawling and now Writing to workbook for', crawlObj.category, crawlObj.subCat1, crawlObj.subCat2);
+      xlsx.utils.sheet_add_json(sheets[crawlObj.category], allData[crawlObj.category]);
+      xlsx.writeFile(workBook, filePath);
 
     }
 
@@ -240,13 +160,13 @@ const getCrawlMap = async (page) => {
 
   const topCatEls = await page.$$('.mega-menu-category > ul > li');
   for (const catEl of topCatEls) {
-    const catName = await (await catEl.$('a#btnTopCate')).evaluate(el => el.textContent.trim().replace('/', ' & '));
+    const catName = await (await catEl.$('a#btnTopCate')).evaluate(el => el.textContent.trim().replaceAll('/', ' & '));
 
     const subCat1BlockEls = await catEl.$$('.col-md-4.col-sm-6');
 
     for (const subCat1El of subCat1BlockEls) {
       const subCat1Link = await subCat1El.$('h3 > a')
-      const subCat1Name = await subCat1Link.evaluate(el => el.textContent.trim().replace('/', ' & '));
+      const subCat1Name = await subCat1Link.evaluate(el => el.textContent.trim().replaceAll('/', ' & '));
 
       const onclickAttr = await subCat1Link.evaluate(el => el.getAttribute('onclick'));
       const subCat1Code = onclickAttr.match(/^gotoSubCate\("(.+)"\);$/)[1];
@@ -264,7 +184,7 @@ const getCrawlMap = async (page) => {
 
       for (const subCat2El of subCat2BlockEls) {
         const subCat2Link = await subCat2El.$('a');
-        const subCat2Name = await subCat2Link.evaluate(el => el.textContent.trim());
+        const subCat2Name = await subCat2Link.evaluate(el => el.textContent.trim().replaceAll('/', ' & '));
 
         const onclickAttr2 = await subCat2Link.evaluate(el => el.getAttribute('onclick'));
         const subCat2Code = onclickAttr2.match(/^gotoSubCate\("(.+)"\);$/)[1];
@@ -282,13 +202,25 @@ const getCrawlMap = async (page) => {
   return crawlCatMap;
 }
 
-function getUrlByCatCode(catCode) {
-  return 'https://www.galleriasm.com/Category/ProductListWithCate?Searchtext=' + catCode + '&BranchNo=005&langCode=EN&Sort=&TotalCount=40&CurrrentPage=1&Pagesize=40';
+function getUrlByCatCode(catCode, storeLocation) {
+  let branchNo = '';
+  switch (storeLocation) {
+    case 'bloor':
+      branchNo = '005';
+      break;
+    case 'wellesley':
+      branchNo = '004'
+      break;
+    default:
+      throw new Error(`storeLocation ${storeLocation} is not supported yet`);
+  }
+
+  return 'https://www.galleriasm.com/Category/ProductListWithCate?Searchtext=' + catCode + '&BranchNo=' + branchNo + '&langCode=EN&Sort=&TotalCount=40&CurrrentPage=1&Pagesize=40';
 }
 
 async function selectStore(page) {
   const storeChangeUrl = 'https://www.galleriasm.com/Home/ChangStore';
-  const bloorSelectBtnSelector = '#bloor + div.store-box .btn-select';
+  const bloorSelectBtnSelector = `#${location} + div.store-box .btn-select`;
   const changeStoreBtnSelector = '#divStoreNote button[onclick="gotoChangeStorePage();"]';
   await page.goto(storeChangeUrl);
   await page.waitForSelector(bloorSelectBtnSelector);
